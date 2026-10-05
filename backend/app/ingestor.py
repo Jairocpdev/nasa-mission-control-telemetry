@@ -1,32 +1,43 @@
 import asyncio
 import json
-import redis.asyncio as redis
-from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import SessionLocal
-from app.models.telemetry import Telemetry
 from datetime import datetime, timezone
+import redis.asyncio as redis
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
+import os
 
-r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/mission_control")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
-connected_clients = set()
+engine = create_async_engine(DATABASE_URL)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-async def save_to_db(packet: dict):
-    async with SessionLocal() as session:
+async def save_to_db(packet):
+    ts_str = packet['timestamp']
+    timestamp = datetime.fromisoformat(ts_str.replace('Z',''))
+    # Remove timezone porque sua coluna é "timestamp without time zone"
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.replace(tzinfo=None)
 
-        tel = Telemetry ( 
-            timestamp=datetime.fromtimestamp(packet['timestamp'], tz=timezone.utc),
-            sat_id=packet['sat_id'],
-            battery=packet['battery'],
-            temperature=packet['temperature'],
-            altitude=packet['altitude'],
-            signal=packet['signal']
-        )
-
-        session.add(tel)
+    async with AsyncSessionLocal() as session:
+        query = text("""
+            INSERT INTO telemetry (timestamp, sat_id, battery, temperature, altitude, signal)
+            VALUES (:timestamp, :sat_id, :battery, :temperature, :altitude, :signal)
+        """)
+        await session.execute(query, {
+            "timestamp": timestamp,
+            "sat_id": packet['sat_id'],
+            "battery": packet['battery'],
+            "temperature": packet['temperature'],
+            "altitude": packet['altitude'],
+            "signal": packet['signal']
+        })
         await session.commit()
+        print(f"💾 Saved: {packet['sat_id']} battery={packet['battery']}%")
 
 async def listen():
+    r = redis.from_url(REDIS_URL, decode_responses=True)
     pubsub = r.pubsub()
     await pubsub.subscribe("telemetry")
     print("👂 Ingestor listening on Redis channel 'telemetry'")
@@ -34,17 +45,7 @@ async def listen():
     async for message in pubsub.listen():
         if message['type'] == 'message':
             packet = json.loads(message['data'])
-
             await save_to_db(packet)
-            
-            for ws in list(connected_clients):
-                try:
-                    await ws.send_json(packet)
-                except:
-                    connected_clients.discard(ws)
-            
-            status = "🔴 CRITICAL" if packet['battery'] < 20 or packet['temperature'] > 75 else "🟢 NOMINAL"
-            print(f"{status} | {packet['sat_id']} | Batt: {packet['battery']}% | Temp: {packet['temperature']}°C")
 
 if __name__ == "__main__":
     asyncio.run(listen())
