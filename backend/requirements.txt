@@ -1,7 +1,9 @@
-fastapi==0.110.0
-uvicorn[standard]==0.27.1
-redis==5.0.1
+fastapi==0.110.2
+uvicorn[standard]==0.29.0
+sqlalchemy==2.0.30
 asyncpg==0.29.0
-sqlalchemy==2.0.27
-pydantic==2.6.1
-python-dotenv==1.0.0
+redis==5.0.5
+pydantic==2.7.4
+pydantic-core==2.18.4 --only-binary=:all:
+python-dotenv==1.0.1
+websockets==12.0
