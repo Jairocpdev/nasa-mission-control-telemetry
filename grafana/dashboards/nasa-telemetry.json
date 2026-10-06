@@ -8,46 +8,44 @@
   "timezone": "browser",
   "refresh": "2s",
   "time": {
-    "from": "now-15m",
+    "from": "now-1h",
     "to": "now"
   },
   "panels": [
     {
+      "id": 1,
       "type": "stat",
       "title": "LIVE TELEMETRY",
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "TimescaleDB"
+      },
       "gridPos": {
         "h": 4,
         "w": 24,
         "x": 0,
         "y": 0
       },
-      "options": {
-        "graphMode": "none",
-        "colorMode": "background",
-        "textMode": "auto"
-      },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) as packets FROM telemetry",
-          "format": "table"
+          "rawSql": "SELECT COUNT(*) as value FROM telemetry",
+          "format": "table",
+          "refId": "A"
         }
       ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
-          },
-          "unit": "short"
-        },
-        "overrides": []
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background"
       }
     },
     {
+      "id": 2,
       "type": "stat",
       "title": "BATTERY %",
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "TimescaleDB"
+      },
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -56,8 +54,9 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT battery as \"Battery\" FROM telemetry ORDER BY timestamp DESC LIMIT 1",
-          "format": "table"
+          "rawSql": "SELECT battery FROM telemetry ORDER BY timestamp DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -81,16 +80,16 @@
             ]
           }
         }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area"
       }
     },
     {
+      "id": 3,
       "type": "gauge",
       "title": "TEMPERATURE \u00b0C",
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "TimescaleDB"
+      },
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -100,37 +99,26 @@
       "targets": [
         {
           "rawSql": "SELECT temperature FROM telemetry ORDER BY timestamp DESC LIMIT 1",
-          "format": "table"
+          "format": "table",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "min": -50,
           "max": 100,
-          "unit": "celsius",
-          "thresholds": {
-            "steps": [
-              {
-                "color": "blue",
-                "value": -50
-              },
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 40
-              }
-            ]
-          }
+          "unit": "celsius"
         }
       }
     },
     {
+      "id": 4,
       "type": "stat",
       "title": "ALTITUDE km",
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "TimescaleDB"
+      },
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -140,7 +128,8 @@
       "targets": [
         {
           "rawSql": "SELECT altitude FROM telemetry ORDER BY timestamp DESC LIMIT 1",
-          "format": "table"
+          "format": "table",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -150,9 +139,13 @@
       }
     },
     {
+      "id": 5,
       "type": "stat",
       "title": "SIGNAL %",
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "TimescaleDB"
+      },
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -161,36 +154,25 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT signal_strength as signal FROM telemetry ORDER BY timestamp DESC LIMIT 1",
-          "format": "table"
+          "rawSql": "SELECT signal FROM telemetry ORDER BY timestamp DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
-          "thresholds": {
-            "steps": [
-              {
-                "color": "red",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "green",
-                "value": 85
-              }
-            ]
-          }
+          "unit": "percent"
         }
       }
     },
     {
+      "id": 6,
       "type": "timeseries",
-      "title": "Battery History (last 15m)",
-      "datasource": "TimescaleDB",
+      "title": "Battery History",
+      "datasource": {
+        "type": "postgres",
+        "uid": "TimescaleDB"
+      },
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -199,15 +181,20 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT timestamp as time, battery FROM telemetry WHERE timestamp > NOW() - INTERVAL '15 minutes' ORDER BY timestamp",
-          "format": "time_series"
+          "rawSql": "SELECT timestamp as time, battery FROM telemetry WHERE timestamp > NOW() - INTERVAL '1 hour' ORDER BY timestamp",
+          "format": "time_series",
+          "refId": "A"
         }
       ]
     },
     {
+      "id": 7,
       "type": "timeseries",
-      "title": "Temperature / Altitude",
-      "datasource": "TimescaleDB",
+      "title": "Temperature / Altitude / Signal",
+      "datasource": {
+        "type": "postgres",
+        "uid": "TimescaleDB"
+      },
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -216,12 +203,19 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT timestamp as time, temperature FROM telemetry WHERE timestamp > NOW() - INTERVAL '15 minutes' ORDER BY timestamp",
-          "format": "time_series"
+          "rawSql": "SELECT timestamp as time, temperature FROM telemetry WHERE timestamp > NOW() - INTERVAL '1 hour' ORDER BY timestamp",
+          "format": "time_series",
+          "refId": "A"
         },
         {
-          "rawSql": "SELECT timestamp as time, altitude FROM telemetry WHERE timestamp > NOW() - INTERVAL '15 minutes' ORDER BY timestamp",
-          "format": "time_series"
+          "rawSql": "SELECT timestamp as time, altitude FROM telemetry WHERE timestamp > NOW() - INTERVAL '1 hour' ORDER BY timestamp",
+          "format": "time_series",
+          "refId": "B"
+        },
+        {
+          "rawSql": "SELECT timestamp as time, signal FROM telemetry WHERE timestamp > NOW() - INTERVAL '1 hour' ORDER BY timestamp",
+          "format": "time_series",
+          "refId": "C"
         }
       ]
     }
