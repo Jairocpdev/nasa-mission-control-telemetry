@@ -17,5 +17,19 @@ services:
     ports:
       - "6379:6379"
 
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mission_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=nasa123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - timescaledb
+
 volumes:
   db_data:
