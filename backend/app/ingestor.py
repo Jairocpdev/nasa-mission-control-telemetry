@@ -16,7 +16,7 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 async def save_to_db(packet):
     ts_str = packet['timestamp']
     timestamp = datetime.fromisoformat(ts_str.replace('Z',''))
-    # Remove timezone porque sua coluna é "timestamp without time zone"
+
     if timestamp.tzinfo is not None:
         timestamp = timestamp.replace(tzinfo=None)
 

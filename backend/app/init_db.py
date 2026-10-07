@@ -14,7 +14,6 @@ async def init():
         """))
         print("✅ Hypertable created")
         
-        # SEPARADO - era isso que quebrou
         await conn.execute(text("""
             ALTER TABLE telemetry SET (
                 timescaledb.compress,
@@ -22,7 +21,6 @@ async def init():
             );
         """))
         
-        # SEPARADO - segundo comando separado
         await conn.execute(text("""
             SELECT add_compression_policy('telemetry', INTERVAL '7 days', if_not_exists => TRUE);
         """))
