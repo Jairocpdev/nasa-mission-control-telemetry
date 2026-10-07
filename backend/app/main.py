@@ -42,3 +42,8 @@ async def ws_telemetry(ws: WebSocket):
 @app.get("/")
 async def root():
     return {"status": "【entity-NASA¦canonical_name=NASA】 MISSION CONTROL ONLINE", "pipeline": "satellite.py -> Redis -> ingestor.py -> TimescaleDB -> FastAPI"}
+
+@app.get("/telemetry/history")
+async def get_history(limit: int = 100, sat_id: str = "SAT-01"):
+    query = "SELECT * FROM telemetry WHERE sat_id = :sat_id ORDER BY timestamp DESC LIMIT :limit"
+    # ...
