@@ -5,3 +5,4 @@ frontend/dist/
 __pycache__/
 .env
 db_data/
+.env

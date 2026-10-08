@@ -1,5 +1,5 @@
 ﻿export const environment = {
   production: false,
-  apiUrl: 'http://localhost:8000',
-  wsUrl: 'ws://localhost:8000/ws/telemetry'
+  apiUrl: 'https://nasa-mission-control-api-vpn1.onrender.com',
+  wsUrl: 'wss://nasa-mission-control-api-vpn1.onrender.com/ws/telemetry'
 };

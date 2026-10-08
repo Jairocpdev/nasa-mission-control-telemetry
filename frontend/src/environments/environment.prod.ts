@@ -1,5 +1,5 @@
 ﻿export const environment = {
   production: true,
-  apiUrl: 'https://SUA-URL-DO-RENDER.onrender.com',
-  wsUrl: 'wss://SUA-URL-DO-RENDER.onrender.com/ws/telemetry'
+  apiUrl: 'https://nasa-mission-control-api-vpn1.onrender.com',
+  wsUrl: 'https://nasa-mission-control-api-vpn1.onrender.com/telemetry/history'
 };

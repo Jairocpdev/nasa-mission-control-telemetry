@@ -1,21 +1,24 @@
-import time
-import json
-import random
-import redis
+import asyncio, json, os, random
+from datetime import datetime, timezone
+import redis.asyncio as redis
 
-r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
-sat_id = "SAT-01"
+async def main():
+    r = redis.from_url(REDIS_URL, decode_responses=True)
+    print(f"🛰  SAT-01 publishing to {REDIS_URL[-30:]}")
+    while True:
+        packet = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "sat_id": "SAT-01",
+            "battery": random.uniform(20, 100),
+            "temperature": random.uniform(-50, 50),
+            "altitude": random.uniform(400, 420),
+            "signal": random.uniform(0, 100)
+        }
+        await r.publish("telemetry", json.dumps(packet))
+        print(f"Sent battery {packet['battery']:.1f}%")
+        await asyncio.sleep(0.5)
 
-while True:
-    packet = {
-        "sat_id": sat_id,
-        "timestamp": time.time(),
-        "battery": round(random.uniform(20, 100), 2), # 20% a 100%
-        "temperature": round(random.uniform(-50, 80), 2),
-        "altitude": round(random.uniform(400, 450), 2),
-        "signal": round(random.uniform(0, 100), 2)
-    }
-    r.publish("telemetry", json.dumps(packet))
-    print(f"📡 {sat_id} -> {packet}")
-    time.sleep(0.5) # 2 msg/s
+if __name__ == "__main__":
+    asyncio.run(main())
