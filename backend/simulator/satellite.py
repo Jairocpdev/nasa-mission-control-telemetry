@@ -1,6 +1,9 @@
 import asyncio, json, os, random
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 import redis.asyncio as redis
+
+load_dotenv()
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 

@@ -1,7 +1,10 @@
 import asyncio, json, os
+from dotenv import load_dotenv
 import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
+
+load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 REDIS_URL = os.getenv("REDIS_URL")
@@ -9,7 +12,7 @@ REDIS_URL = os.getenv("REDIS_URL")
 engine = create_async_engine(DATABASE_URL, echo=False)
 
 async def listen():
-    r = redis.from_url(REDIS_URL, decode_responses=True, ssl_cert_reqs="none")
+    r = redis.from_url(REDIS_URL, decode_responses=True)
     pubsub = r.pubsub()
     await pubsub.subscribe("telemetry")
     print("👂 Ingestor listening on cloud...")
