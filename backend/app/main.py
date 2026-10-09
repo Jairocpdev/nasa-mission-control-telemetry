@@ -2,68 +2,43 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
-import os, asyncio, json
-from datetime import datetime, timezone
+import os, asyncio, json, ssl
+from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Render precisa de DATABASE_URL nas Environment Variables, não só no .env
 if not DATABASE_URL:
-    print("⚠️  WARNING: DATABASE_URL not set! Check Render Environment Variables")
+    print("WARNING: DATABASE_URL not set!")
     DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/fake_db"
 
-# --- FIX Supabase + asyncpg: asyncpg não entende ?sslmode=require na URL ---
-# Se a URL vier com sslmode, pgbouncer, etc, a gente limpa e usa ssl=True no connect_args
 clean_url = DATABASE_URL.strip()
-use_ssl = False
-
-# FIX: se colou 2x o prefixo (postgresql+asyncpg://postgresql+asyncpg://...) corrige
 while clean_url.count("postgresql+asyncpg://") > 1:
     clean_url = clean_url.replace("postgresql+asyncpg://postgresql+asyncpg://", "postgresql+asyncpg://")
-while clean_url.count("postgresql://") > 1:
-    clean_url = clean_url.replace("postgresql://postgresql://", "postgresql://")
 
-if "supabase.com" in clean_url or "sslmode=require" in clean_url or "sslmode" in clean_url:
-    use_ssl = True
-    # remove parametros que quebram asyncpg
-    clean_url = clean_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
-    clean_url = clean_url.replace("?pgbouncer=true", "").replace("&pgbouncer=true", "")
-    clean_url = clean_url.replace("&&", "&").replace("?&", "?")
-    clean_url = clean_url.rstrip("?&")
-    print(f"🔧 Supabase detected, using SSL=True, cleaned URL")
-else:
-    # Mesmo sem supabase.com, se for pooler precisa SSL
-    if "pooler.supabase.com" in clean_url or ":6543" in clean_url:
-        use_ssl = True
+use_ssl = "supabase.com" in clean_url or "pooler.supabase.com" in clean_url or ":6543" in clean_url
+
+for param in ["?sslmode=require", "&sslmode=require", "?pgbouncer=true", "&pgbouncer=true"]:
+    clean_url = clean_url.replace(param, "")
+clean_url = clean_url.replace("&&", "&").replace("?&", "?").rstrip("?&")
 
 engine = None
 try:
     connect_args = {"statement_cache_size": 0, "prepared_statement_cache_size": 0}
     if use_ssl:
-        connect_args["ssl"] = True
-
-    engine = create_async_engine(
-        clean_url,
-        echo=False,
-        connect_args=connect_args,
-        pool_pre_ping=True,
-    )
-    print(f"✅ Engine created for DB: {clean_url[:35]}... ssl={use_ssl}")
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = ctx
+    engine = create_async_engine(clean_url, echo=False, connect_args=connect_args, pool_pre_ping=True)
+    print(f"Engine created ssl={use_ssl}")
 except Exception as e:
-    print(f"❌ Failed to create engine: {e}")
+    print(f"Failed: {e}")
 
-app = FastAPI(title="NASA Mission Control API", version="2.1")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="NASA Mission Control API", version="2.2")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/")
 async def root():
@@ -72,27 +47,26 @@ async def root():
 @app.get("/health")
 async def health():
     if not engine:
-        return {"status":"ERROR","error":"engine not created, check DATABASE_URL env var"}
+        return {"status":"ERROR","error":"engine not created"}
     try:
         async with engine.connect() as conn:
             r = await conn.execute(text("SELECT COUNT(*) FROM telemetry"))
             count = r.scalar()
-            return {"status":"OK","telemetry_count":count,"database_url_set": bool(os.getenv("DATABASE_URL"))}
+            return {"status":"OK","telemetry_count":count}
     except Exception as e:
-        return {"status":"ERROR","error":str(e),"hint":"Check DATABASE_URL, maybe need ?sslmode=require"}
+        return {"status":"ERROR","error":str(e)}
 
 @app.get("/telemetry/latest")
 async def latest():
     if not engine:
-        return {"detail": "engine not initialized - DATABASE_URL missing"}
+        return {"detail": "engine not initialized"}
     try:
         async with engine.connect() as conn:
             r = await conn.execute(text("SELECT * FROM telemetry ORDER BY timestamp DESC LIMIT 1"))
             row = r.mappings().first()
-            return dict(row) if row else {"detail": "no data yet - run satellite.py"}
+            return dict(row) if row else {"detail": "no data yet"}
     except Exception as e:
-        print(f"❌ /latest error: {e}")
-        return {"detail": f"DB error: {str(e)}", "hint": "Check if table telemetry exists, run CREATE TABLE"}
+        return {"detail": f"DB error: {str(e)}"}
 
 @app.get("/telemetry/history")
 async def history(limit: int = Query(100, le=20000), order: str = Query("desc"), sat_id: str = Query("SAT-01")):
@@ -102,19 +76,14 @@ async def history(limit: int = Query(100, le=20000), order: str = Query("desc"),
         order_sql = "DESC" if order.lower() == "desc" else "ASC"
         limit = int(limit)
         async with engine.connect() as conn:
-            r = await conn.execute(
-                text(f"SELECT * FROM telemetry WHERE sat_id = :sat_id ORDER BY timestamp {order_sql} LIMIT {limit}"),
-                {"sat_id": sat_id}
-            )
+            r = await conn.execute(text(f"SELECT * FROM telemetry WHERE sat_id = :sat_id ORDER BY timestamp {order_sql} LIMIT {limit}"), {"sat_id": sat_id})
             return [dict(x) for x in r.mappings().all()]
     except Exception as e:
-        print(f"❌ /history error: {e}")
         return {"detail": f"DB error: {str(e)}"}
 
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(websocket: WebSocket):
     await websocket.accept()
-    print(f"🛰️ WS Client connected: {websocket.client}")
     try:
         while True:
             async with engine.connect() as conn:
@@ -122,13 +91,12 @@ async def ws_telemetry(websocket: WebSocket):
                 row = r.mappings().first()
                 if row:
                     data = dict(row)
-                    # converte datetime pra ISO se precisar
                     if isinstance(data.get("timestamp"), datetime):
                         data["timestamp"] = data["timestamp"].isoformat()
                     await websocket.send_text(json.dumps(data))
             await asyncio.sleep(0.5)
     except WebSocketDisconnect:
-        print(f"WS Client disconnected: {websocket.client}")
+        pass
     except Exception as e:
-        print(f"WS Error: {e}")
-        await websocket.close()
+        try: await websocket.close()
+        except: pass
