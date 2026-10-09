@@ -13,18 +13,45 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # Render precisa de DATABASE_URL nas Environment Variables, não só no .env
 if not DATABASE_URL:
     print("⚠️  WARNING: DATABASE_URL not set! Check Render Environment Variables")
-    # fallback pra não crashar o import
     DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/fake_db"
+
+# --- FIX Supabase + asyncpg: asyncpg não entende ?sslmode=require na URL ---
+# Se a URL vier com sslmode, pgbouncer, etc, a gente limpa e usa ssl=True no connect_args
+clean_url = DATABASE_URL.strip()
+use_ssl = False
+
+# FIX: se colou 2x o prefixo (postgresql+asyncpg://postgresql+asyncpg://...) corrige
+while clean_url.count("postgresql+asyncpg://") > 1:
+    clean_url = clean_url.replace("postgresql+asyncpg://postgresql+asyncpg://", "postgresql+asyncpg://")
+while clean_url.count("postgresql://") > 1:
+    clean_url = clean_url.replace("postgresql://postgresql://", "postgresql://")
+
+if "supabase.com" in clean_url or "sslmode=require" in clean_url or "sslmode" in clean_url:
+    use_ssl = True
+    # remove parametros que quebram asyncpg
+    clean_url = clean_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+    clean_url = clean_url.replace("?pgbouncer=true", "").replace("&pgbouncer=true", "")
+    clean_url = clean_url.replace("&&", "&").replace("?&", "?")
+    clean_url = clean_url.rstrip("?&")
+    print(f"🔧 Supabase detected, using SSL=True, cleaned URL")
+else:
+    # Mesmo sem supabase.com, se for pooler precisa SSL
+    if "pooler.supabase.com" in clean_url or ":6543" in clean_url:
+        use_ssl = True
 
 engine = None
 try:
+    connect_args = {"statement_cache_size": 0, "prepared_statement_cache_size": 0}
+    if use_ssl:
+        connect_args["ssl"] = True
+
     engine = create_async_engine(
-        DATABASE_URL,
+        clean_url,
         echo=False,
-        connect_args={"statement_cache_size": 0, "prepared_statement_cache_size": 0},
+        connect_args=connect_args,
         pool_pre_ping=True,
     )
-    print(f"✅ Engine created for DB: {DATABASE_URL[:30]}...")
+    print(f"✅ Engine created for DB: {clean_url[:35]}... ssl={use_ssl}")
 except Exception as e:
     print(f"❌ Failed to create engine: {e}")
 
