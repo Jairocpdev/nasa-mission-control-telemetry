@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 import redis.asyncio as redis
 
 load_dotenv()
-
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 async def main():
@@ -20,7 +19,7 @@ async def main():
             "signal": random.uniform(0, 100)
         }
         await r.publish("telemetry", json.dumps(packet))
-        print(f"Sent battery {packet['battery']:.1f}%")
+        print(f"Sent battery {packet['battery']:.1f}% temp {packet['temperature']:.1f}C")
         await asyncio.sleep(0.5)
 
 if __name__ == "__main__":
