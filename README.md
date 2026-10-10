@@ -87,4 +87,4 @@ curl.exe https://nasa-mission-control-api-vpn1.onrender.com/health
 
 **Commit:** `feat: satellite autonomous v3 - no-terminal-needed + README final`  
 **Autor:** Jairo Andrade - Nilópolis, RJ  
-**Status:** 🛰️ ONLINE AUTONOMOUS - FOOOI!
+**Status:** 🛰️ ONLINE AUTONOMOUS
