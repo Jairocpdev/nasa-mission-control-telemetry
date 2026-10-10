@@ -1,108 +1,90 @@
-# Drop Hunter 🎯 - @prints.raros
+# 🛰️ NASA Mission Control Telemetry - SAT-01
 
-> Bot serverless que monitora drops raros na Artwalk e notifica em tempo real no Telegram. Primeiro a saber, primeiro a postar.
+[ONLINE](https://img.shields.io/badge/STATUS-ONLINE_16170+-brightgreen?style=for-the-badge) 
+[Autonomous](https://img.shields.io/badge/MODE-AUTONOMOUS-no--terminal--needed-blue?style=for-the-badge)
+[Stack](https://img.shields.io/badge/Stack-Angular_FastAPI_Supabase-0f172a?style=for-the-badge)
 
-**Status:** 🟢 v1.0 em produção - `ARTWALK DUNK LOW PANDA - DD1391-100` com detecção de `Tam 42: 100 un`
+> **FOOOOI!** Depois de `toFixed crash`, `Redis 1225`, `Docker fail`, `CORS 401` e números fixos em `99.84%` por 1 dia - agora é **100% autônomo, sem depender de terminal**.
 
-[Telegram](https://img.shields.io/badge/Telegram-Drop%20Hunter%20Raros-26A5E4?style=flat&logo=telegram)
-[AWS](https://img.shields.io/badge/AWS-SAM%20%7C%20Lambda%20%7C%20EventBridge%20%7C%20DynamoDB-FF9900?style=flat&logo=amazonaws)
-[Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python)
+**Live Demo:** https://nasa-mission-control-telemetry-rho.vercel.app/  
+**API:** https://nasa-mission-control-api-vpn1.onrender.com  
+**Health:** https://nasa-mission-control-api-vpn1.onrender.com/health → `{"telemetry_count":16170+,"satellite_autonomous":true}`
 
 ---
 
-### 🚨 Como funciona
+## 🚀 O que foi corrigido (jornada)
+
+1. **v1 - Quebrado:** `Cannot read properties of undefined (reading 'toFixed')` no `app.component.ts:16` - frontend Angular crashava antes da API responder
+2. **v2 - Local dependente:** `direct-inject-live.py` → Supabase funcionou (`16134 packets`) mas dependia de terminal aberto, fechou = números fixos
+3. **v3 - AUTÔNOMO (atual):** Satélite roda DENTRO da API no Render via `lifespan` + `satellite_loop()` - `+1 pacote/s` mesmo com PC desligado
+
+## 🏗️ Arquitetura Final - No Terminal Needed
 
 ```
-[EventBridge - a cada 2min] → ArtwalkScraper → DynamoDB (drop-hunter-stock) 
-    → EventBus (drop-hunter-events) → NotifierFunction → Telegram @prints.raros
+[Render FastAPI v3.0-AUTONOMOUS] --lifespan--> satellite_loop() --1/s--> [Supabase TimescaleDB]
+        |                                                               |
+        |-- /telemetry/latest, /history, /ws/telemetry, /health        |
+        v                                                               |
+[Vercel Angular] --fetch 2s--> REST + WS LIVE --display--> NASA Dashboard
+        BATTERY 87.90% | TEMPERATURE -13.45°C | ALTITUDE 419.62km | SIGNAL 93.89%
 ```
 
-1. **Scraper** bate na página `https://www.artwalk.com.br/tenis-nike-dunk-low-retro-masculino-dd139-1-100/p`
-2. Extrai `productId` do HTML e consulta `api/catalog_system/pub/products/search`
-3. Soma `AvailableQuantity` de todos os SKUs
-4. Compara com DynamoDB: se `old=0` e `new>0` → RARO DETECTADO
-5. **Notifier** envia mensagem formatada com tamanhos disponíveis e link direto
+**Antes:** `satellite.py → Redis (localhost:6379) → ingestor.py → Postgres` (precisava Docker, Redis)  
+**Agora:** `API lifespan → Supabase direto (asyncpg)` - sem Docker, sem Redis, sem terminal
 
-Exemplo real que já recebemos:
+## 🔧 Stack
 
-```
-🚨 RARO DETECTADO!
+- **Frontend:** Angular 17 standalone `imports: [CommonModule, HttpClientModule]` + `safe(n)` guard pra `toFixed`
+  - Build: `ng build` → `221.35 kB main | 59.98 kB transfer` - `Application bundle generation complete`
+- **Backend:** FastAPI v3.0 + SQLAlchemy async + asyncpg + lifespan background task
+  - `allow_credentials=False` fix CORS `site.webmanifest 401` + `allow_origins=["*"]`
+  - `statement_cache_size=0` fix pgbouncer Supabase + SSL `CERT_NONE`
+- **DB:** Supabase Postgres + TimescaleDB - tabela `telemetry (timestamp, sat_id, battery, temperature, altitude, signal)`
+- **Deploy:** Render (API + satélite autônomo) + Vercel (Angular)
 
-ARTWALK DUNK LOW PANDA - DD1391-100
-Voltou com 140 unidades!
+## 📦 Endpoints
 
-📦 Disponíveis:
-• Tam 38: 10
-• Tam 39: 10
-• Tam 41: 10
-• Tam 42: 100
-• Tam 43: 10
+- `GET /` → `{"status":"NASA ONLINE AUTONOMOUS","mode":"self-generating"}`
+- `GET /health` → `{"status":"OK","telemetry_count":16170,"satellite_autonomous":true,"mode":"no-terminal-needed"}`
+- `GET /telemetry/latest` → último pacote
+- `GET /telemetry/history?limit=100&order=desc` → últimos 100
+- `WS /ws/telemetry` → push a cada 0.5s
 
-🔗 Comprar: https://www.artwalk.com.br/tenis-nike-dunk-low-retro-masculino-dd139-1-100/p
-
-@prints.raros
-```
-
-### 📁 Estrutura
-
-```
-drop-hunter/
-├── template.yaml              # SAM - 1 EventBus + 1 DynamoDB + 2 Lambdas
-├── src/
-│   ├── artwalk/
-│   │   └── artwalk_scraper.py # Scraper VTEX + PutEvents
-│   └── notifier/
-│       ├── app.py             # Formatação Telegram
-│       └── requirements.txt   # requests
-└── .gitignore
-```
-
-### 🚀 Deploy
-
-Pré-requisitos: `aws cli`, `sam cli` configurado em `us-east-1`
+## 🖥️ Como rodar local (opcional - não precisa mais)
 
 ```bash
-# 1. Criar bot no @BotFather e pegar token
-# 2. Pegar chat_id (grupo ou seu id)
+# Backend já é autônomo no Render, mas se quiser local:
+cd backend
+pip install -r requirements.txt # fastapi sqlalchemy asyncpg python-dotenv
+uvicorn app.main:app --reload
 
-aws ssm put-parameter --name /drop-hunter/bot-token --value "SEU_TOKEN" --type String --overwrite --region us-east-1
-aws ssm put-parameter --name /drop-hunter/chat-id --value "SEU_CHAT_ID" --type String --overwrite --region us-east-1
-
-# 3. Deploy
-sam build
-sam deploy --stack-name drop-hunter --capabilities CAPABILITY_IAM --resolve-s3 --region us-east-1
-
-# 4. Testar forçando drop (zera estoque e roda scraper)
-aws dynamodb delete-item --table-name drop-hunter-stock --key '{"sku": {"S": "ARTWALK DUNK LOW PANDA - DD1391-100"}}' --region us-east-1
-aws lambda invoke --function-name drop-hunter-artwalk-scraper --region us-east-1 out.json
-cat out.json # {"status":"notified","old":0,"new":140}
+# Frontend
+cd frontend
+npm install
+ng serve # http://localhost:4200
+npm run build # dist/frontend
 ```
 
-### 🔧 Variáveis
+## 🗑️ Cleanup - O que foi apagado
 
-| Lambda | Env | Descrição |
-|--------|-----|-----------|
-| `ArtwalkScraper` | `TABLE_NAME` | `drop-hunter-stock` |
-| | `EVENT_BUS_NAME` | `drop-hunter-events` |
-| `NotifierFunction` | `BOT_TOKEN` | `{{resolve:ssm:/drop-hunter/bot-token}}` |
-| | `CHAT_ID` | `{{resolve:ssm:/drop-hunter/chat-id}}` |
+- `backend/simulator/` inteiro incluindo `direct-inject-live.py` - era o que prendia ao terminal
+- `backend/app/ingestor.py` - antigo consumidor Redis
+- `docker run -p 6379:6379 redis` - não precisa mais
 
-### 🐛 Fixes que já passamos (v1.0)
+## ✅ Validação final
 
-- `404 SEU_TOKEN_NOVO_AQUI` → token placeholder → revogado via @BotFather
-- `AccessDeniedException events:PutEvents on default` → faltava `Source`, `DetailType`, `EventBusName` no `put_events`
-- `TÃªnis` → encoding `latin1` → `utf8`
-- `Ver no site` → `sizes_simple` filtrado `qty>0` pra não estourar limite do EventBridge
+```powershell
+curl.exe https://nasa-mission-control-api-vpn1.onrender.com/health
+# {"status":"OK","telemetry_count":16158,"satellite_autonomous":true,"mode":"no-terminal-needed"}
+# 10s depois:
+# {"status":"OK","telemetry_count":16167,"satellite_autonomous":true,"mode":"no-terminal-needed"}
+# +9 em 10s = 1/s vivo!
+```
 
-### 🗺️ Roadmap v1.1
-
-- [ ] Loop de múltiplos SKUs (Dunk High, AJ1, New Balance)
-- [ ] Dashboard `/stats` no Telegram
-- [ ] Filtro por tamanho (só notificar se 42 voltar)
-- [ ] Histórico de drops no DynamoDB + gráfico
+**Frontend:** https://nasa-mission-control-telemetry-rho.vercel.app/ mostra `ONLINE - 16170 packets` com BAT/TEMP/ALT/SIG mudando sozinho.
 
 ---
 
-Feito por [@jairocandrade](https://instagram.com/jairocandrade) para [@prints.raros](https://instagram.com/prints.raros)
-
-> Se o 42 voltar, você sabe primeiro.
+**Commit:** `feat: satellite autonomous v3 - no-terminal-needed + README final`  
+**Autor:** Jairo Andrade - Nilópolis, RJ  
+**Status:** 🛰️ ONLINE AUTONOMOUS - FOOOI!
