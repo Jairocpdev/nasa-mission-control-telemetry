@@ -2,10 +2,11 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
-import os, asyncio, json, ssl
-from datetime import datetime
+import os, asyncio, json, ssl, random
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -37,12 +38,48 @@ try:
 except Exception as e:
     print(f"Failed: {e}")
 
-app = FastAPI(title="NASA Mission Control API", version="2.2")
+sat_task = None
+async def satellite_loop():
+    """Roda dentro da API no Render - gera telemetria sozinho, sem terminal"""
+    print("🛰️ SATELLITE AUTONOMO INICIADO - sem depender de terminal local")
+    while True:
+        try:
+            async with engine.begin() as conn:
+                packet = {
+                    "timestamp": datetime.now(timezone.utc),
+                    "sat_id": "SAT-01",
+                    "battery": random.uniform(20,100),
+                    "temperature": random.uniform(-20,50),
+                    "altitude": random.uniform(400,420),
+                    "signal": random.uniform(20,100),
+                }
+                await conn.execute(text(
+                    "INSERT INTO telemetry (timestamp,sat_id,battery,temperature,altitude,signal) "
+                    "VALUES (:timestamp,:sat_id,:battery,:temperature,:altitude,:signal)"
+                ), packet)
+            await asyncio.sleep(1.0)  
+        except Exception as e:
+            print(f"Sat loop error (retry 2s): {e}")
+            await asyncio.sleep(2)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global sat_task
+
+    sat_task = asyncio.create_task(satellite_loop())
+    print("Lifespan start - satellite task created")
+    yield
+    if sat_task:
+        sat_task.cancel()
+        try: await sat_task
+        except asyncio.CancelledError: pass
+
+app = FastAPI(title="NASA Mission Control API", version="3.0-AUTONOMOUS", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/")
 async def root():
-    return {"status": " NASA ONLINE", "db_connected": engine is not None, "routes": ["/telemetry/latest", "/telemetry/history", "/ws/telemetry", "/health"]}
+    return {"status": "NASA ONLINE AUTONOMOUS", "mode": "self-generating", "db_connected": engine is not None, "routes": ["/telemetry/latest", "/telemetry/history", "/ws/telemetry", "/health"]}
 
 @app.get("/health")
 async def health():
@@ -52,7 +89,9 @@ async def health():
         async with engine.connect() as conn:
             r = await conn.execute(text("SELECT COUNT(*) FROM telemetry"))
             count = r.scalar()
-            return {"status":"OK","telemetry_count":count}
+            
+            sat_alive = sat_task is not None and not sat_task.done()
+            return {"status":"OK","telemetry_count":count, "satellite_autonomous": sat_alive, "mode": "no-terminal-needed"}
     except Exception as e:
         return {"status":"ERROR","error":str(e)}
 
