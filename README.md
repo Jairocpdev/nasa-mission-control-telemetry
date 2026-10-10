@@ -1,164 +1,108 @@
+# Drop Hunter 🎯 - @prints.raros
 
-# 🛰️ NASA MISSION CONTROL TELEMETRY
+> Bot serverless que monitora drops raros na Artwalk e notifica em tempo real no Telegram. Primeiro a saber, primeiro a postar.
 
-> **SAT-01 | TimescaleDB + Redis + FastAPI + Angular 19**
-> Pipeline em tempo real: `satellite.py (2msg/s) → Redis → ingestor.py → mission_control (hypertable) → FastAPI → Angular`
+**Status:** 🟢 v1.0 em produção - `ARTWALK DUNK LOW PANDA - DD1391-100` com detecção de `Tam 42: 100 un`
 
-[Status](https://img.shields.io/badge/status-LIVE%20(162%20packets)-brightgreen)
-[Stack](https://img.shields.io/badge/stack-TimescaleDB%2BRedis%2BFastAPI%2BAngular%2019-blue)
-[Python](https://img.shields.io/badge/python-3.12-yellow)
-[License](https://img.shields.io/badge/license-MIT-black)
-
----
-
-## 🖥️ Preview
-
-```
-🛰️ NASA MISSION CONTROL TELEMETRY
-SAT-01 | TimescaleDB + Redis + FastAPI + Angular 19
-
-LIVE TELEMETRY (162 packets ingested)
-
-TIMESTAMP: 2026-10-05T15:29:16.334678
-BATTERY: 69.81% NOMINAL
-TEMPERATURE: 28.08°C
-ALTITUDE: 436.6 km
-SIGNAL: 81.66%
-SAT_ID: SAT-01
-```
-
-API: `GET /telemetry/history?limit=8` → JSON real da hypertable.
+[Telegram](https://img.shields.io/badge/Telegram-Drop%20Hunter%20Raros-26A5E4?style=flat&logo=telegram)
+[AWS](https://img.shields.io/badge/AWS-SAM%20%7C%20Lambda%20%7C%20EventBridge%20%7C%20DynamoDB-FF9900?style=flat&logo=amazonaws)
+[Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python)
 
 ---
 
-## 🏗️ Arquitetura
+### 🚨 Como funciona
 
-```mermaid
-graph LR
-    A[satellite.py<br/>2 msg/s] -->|PUBLISH telemetry| B[Redis 6379]
-    B -->|SUBSCRIBE| C[ingestor.py<br/>👂 Listening]
-    C -->|INSERT| D[(TimescaleDB<br/>mission_timescaledb:5433<br/>hypertable telemetry)]
-    D -->|SELECT| E[FastAPI<br/>:8000 /telemetry/history<br/>/ws/telemetry]
-    E -->|HTTP + WebSocket| F[Angular 19<br/>:4200 LIVE TELEMETRY]
+```
+[EventBridge - a cada 2min] → ArtwalkScraper → DynamoDB (drop-hunter-stock) 
+    → EventBus (drop-hunter-events) → NotifierFunction → Telegram @prints.raros
 ```
 
-**Tabela:**
-```sql
-Table "public.telemetry"
-  timestamp | timestamp without time zone | PK
-  sat_id    | varchar
-  battery   | double precision
-  temperature | double precision
-  altitude  | double precision
-  signal    | double precision
-Indexes: telemetry_timestamp_idx DESC
+1. **Scraper** bate na página `https://www.artwalk.com.br/tenis-nike-dunk-low-retro-masculino-dd139-1-100/p`
+2. Extrai `productId` do HTML e consulta `api/catalog_system/pub/products/search`
+3. Soma `AvailableQuantity` de todos os SKUs
+4. Compara com DynamoDB: se `old=0` e `new>0` → RARO DETECTADO
+5. **Notifier** envia mensagem formatada com tamanhos disponíveis e link direto
+
+Exemplo real que já recebemos:
+
 ```
+🚨 RARO DETECTADO!
+
+ARTWALK DUNK LOW PANDA - DD1391-100
+Voltou com 140 unidades!
+
+📦 Disponíveis:
+• Tam 38: 10
+• Tam 39: 10
+• Tam 41: 10
+• Tam 42: 100
+• Tam 43: 10
+
+🔗 Comprar: https://www.artwalk.com.br/tenis-nike-dunk-low-retro-masculino-dd139-1-100/p
+
+@prints.raros
+```
+
+### 📁 Estrutura
+
+```
+drop-hunter/
+├── template.yaml              # SAM - 1 EventBus + 1 DynamoDB + 2 Lambdas
+├── src/
+│   ├── artwalk/
+│   │   └── artwalk_scraper.py # Scraper VTEX + PutEvents
+│   └── notifier/
+│       ├── app.py             # Formatação Telegram
+│       └── requirements.txt   # requests
+└── .gitignore
+```
+
+### 🚀 Deploy
+
+Pré-requisitos: `aws cli`, `sam cli` configurado em `us-east-1`
+
+```bash
+# 1. Criar bot no @BotFather e pegar token
+# 2. Pegar chat_id (grupo ou seu id)
+
+aws ssm put-parameter --name /drop-hunter/bot-token --value "SEU_TOKEN" --type String --overwrite --region us-east-1
+aws ssm put-parameter --name /drop-hunter/chat-id --value "SEU_CHAT_ID" --type String --overwrite --region us-east-1
+
+# 3. Deploy
+sam build
+sam deploy --stack-name drop-hunter --capabilities CAPABILITY_IAM --resolve-s3 --region us-east-1
+
+# 4. Testar forçando drop (zera estoque e roda scraper)
+aws dynamodb delete-item --table-name drop-hunter-stock --key '{"sku": {"S": "ARTWALK DUNK LOW PANDA - DD1391-100"}}' --region us-east-1
+aws lambda invoke --function-name drop-hunter-artwalk-scraper --region us-east-1 out.json
+cat out.json # {"status":"notified","old":0,"new":140}
+```
+
+### 🔧 Variáveis
+
+| Lambda | Env | Descrição |
+|--------|-----|-----------|
+| `ArtwalkScraper` | `TABLE_NAME` | `drop-hunter-stock` |
+| | `EVENT_BUS_NAME` | `drop-hunter-events` |
+| `NotifierFunction` | `BOT_TOKEN` | `{{resolve:ssm:/drop-hunter/bot-token}}` |
+| | `CHAT_ID` | `{{resolve:ssm:/drop-hunter/chat-id}}` |
+
+### 🐛 Fixes que já passamos (v1.0)
+
+- `404 SEU_TOKEN_NOVO_AQUI` → token placeholder → revogado via @BotFather
+- `AccessDeniedException events:PutEvents on default` → faltava `Source`, `DetailType`, `EventBusName` no `put_events`
+- `TÃªnis` → encoding `latin1` → `utf8`
+- `Ver no site` → `sizes_simple` filtrado `qty>0` pra não estourar limite do EventBridge
+
+### 🗺️ Roadmap v1.1
+
+- [ ] Loop de múltiplos SKUs (Dunk High, AJ1, New Balance)
+- [ ] Dashboard `/stats` no Telegram
+- [ ] Filtro por tamanho (só notificar se 42 voltar)
+- [ ] Histórico de drops no DynamoDB + gráfico
 
 ---
 
-## 🚀 Quick Start (Windows - corrigido)
+Feito por [@jairocandrade](https://instagram.com/jairocandrade) para [@prints.raros](https://instagram.com/prints.raros)
 
-### 1. Subir infra
-```powershell
-docker-compose up -d
-docker ps
-# 0.0.0.0:5433->5432/tcp  mission_timescaledb
-# 0.0.0.0:6379->6379/tcp  mission_redis
-```
-
-> **Importante:** Projeto usa `5433:5432` para não conflitar com Postgres local na 5432. Todo `DATABASE_URL` deve ser `localhost:5433`.
-
-### 2. Backend (3 terminais)
-```powershell
-# Terminal 1 - Ingestor
-cd backend
-.env\Scripts\Activate.ps1
-python -m app.ingestor
-# 👂 Listening + 💾 Saved: SAT-01 battery=...
-
-# Terminal 2 - Simulador
-cd simulator
-..ackendenv\Scripts\Activate.ps1
-python satellite.py
-# 🛰️ publishing 2msg/s
-
-# Terminal 3 - FastAPI
-cd backend
-.env\Scripts\Activate.ps1
-uvicorn app.main:app --reload --port 8000
-# http://127.0.0.1:8000/docs
-# http://127.0.0.1:8000/telemetry/history?limit=8
-```
-
-### 3. Frontend
-```powershell
-cd frontend
-npm install
-ng serve --port 4200
-# http://localhost:4200 → LIVE TELEMETRY
-```
-
-### 4. Validar
-```powershell
-docker exec -it mission_timescaledb psql -U postgres -d mission_control -c "SELECT COUNT(*) FROM telemetry;"
-# count: 35 → 162 → 500+ (crescendo)
-```
-
----
-
-## 🐛 Troubleshooting - 7 bugs corrigidos nesta missão
-
-| Erro | Causa | Fix |
-|------|-------|-----|
-| `Node 24 Unsupported` | Angular 19 precisa Node 20/22 | `nvm use 20` |
-| `ssr.entry required` | Angular SSR habilitado sem server | `ng serve` sem SSR ou `angular.json` sem ssr |
-| `WinError 1225 ConnectionRefused 5432` | `docker-compose.yml` mapeia `5433:5432` | Trocar `DATABASE_URL` para `localhost:5433` |
-| `column "time" does not exist` | Tabela usa `timestamp` | `INSERT INTO telemetry (timestamp, ...)` |
-| `can't subtract offset-naive and offset-aware` | Coluna `timestamp without time zone` + datetime com `tzinfo` | `timestamp.replace(tzinfo=None)` |
-| `ImportError connected_clients` | `main.py` importava do `ingestor.py` simples | Definir `connected_clients = set()` no `main.py` |
-| `rootDir must be explicitly set` | Angular 19 + `tsconfig.json` sem rootDir | Adicionar `"rootDir": "./src"` |
-
----
-
-## 📦 Stack
-
-- **DB:** TimescaleDB 15 (hypertable) + Redis 7
-- **Backend:** Python 3.12, FastAPI, SQLAlchemy async, asyncpg, redis.asyncio
-- **Frontend:** Angular 19, TypeScript 5, RxJS WebSocket
-- **Infra:** Docker, docker-compose
-- **Simulador:** `satellite.py` gera `battery, temperature, altitude, signal` a 2Hz
-
----
-
-## 📂 Estrutura
-
-```
-nasa-mission-control-telemetry/
-├── docker-compose.yml (5433:5432, 6379:6379)
-├── backend/
-│   ├── app/
-│   │   ├── main.py (FastAPI + /telemetry/history + /ws)
-│   │   ├── ingestor.py (Redis → TimescaleDB)
-│   │   ├── database.py (DATABASE_URL 5433)
-│   │   └── models.py
-│   └── venv/
-├── simulator/
-│   └── satellite.py
-└── frontend/
-    ├── src/app/ (telemetry live component)
-    └── tsconfig.json (rootDir: ./src)
-```
-
----
-
-## 🔜 Próximos passos
-
-- [ ] Grafana dashboard para bateria/temperatura
-- [ ] Alertas `battery < 20%` via Redis Pub/Sub
-- [ ] Múltiplos satélites `SAT-02, SAT-03`
-- [ ] Hypertable compression + retention policy TimescaleDB
-- [ ] Deploy com `Timescale Cloud + Fly.io`
-
----
-
-**Feito por Jairo Andrade** - de `TypeError: 'str' object` e `COUNT 35 travado` para `LIVE TELEMETRY 162 packets`
+> Se o 42 voltar, você sabe primeiro.
